@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LOG_FILE = path.join(__dirname, '..', 'access-logs.json');
+const LOG_FILE = path.join(__dirname, '..', '..', 'access-logs.json');
 const PINE_NAMES = {
     "PUB;fad4694201c0492caa1ea2815c92fa40": "Fractal Model Lite",
     "PUB;6e687c53f1df41d4897f1a944a074ffd": "SD Range Lite",
