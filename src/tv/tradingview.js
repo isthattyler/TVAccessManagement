@@ -101,6 +101,10 @@ export class TradingView {
       maxRedirects: 5,
     });
 
+    console.log('Login status:', loginResponse.status);
+    console.log('Login data:', JSON.stringify(loginResponse.data));
+    console.log('Login cookies:', parseCookies(loginResponse));
+
     const loginCookies = parseCookies(loginResponse);
     const requires2FA = loginResponse.data?.code === '2FA_required';
 
