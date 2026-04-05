@@ -5,5 +5,6 @@ export const urls = {
   modify_access: "https://www.tradingview.com/pine_perm/modify_user_expiration/",
   add_access: "https://www.tradingview.com/pine_perm/add/",
   remove_access: "https://www.tradingview.com/pine_perm/remove/",
-  signin: "https://www.tradingview.com/accounts/signin/"
+  signin: "https://www.tradingview.com/accounts/signin/",
+  signin_totp: "https://www.tradingview.com/accounts/two-factor/signin/totp/"
 };
