@@ -16,6 +16,7 @@ yarn-error.log*
 logs/
 *.log
 access-logs.json
+session.json
 
 # Runtime data
 pids/

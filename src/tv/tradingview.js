@@ -1,5 +1,6 @@
 import axios from 'axios';
 import FormData from 'form-data';
+import fs from 'fs';
 import * as OTPAuth from 'otpauth';
 import { urls } from '../config/config.js';
 import { getAccessExtension } from '../helper/helper.js';
@@ -9,6 +10,8 @@ dotenv.config();
 const USERNAME = process.env.TV_USERNAME;
 const PASSWORD = process.env.TV_PASSWORD;
 const TOTP_SECRET = process.env.TV_TOTP_SECRET;
+const SESSION_FILE = './session.json';
+const SESSION_TTL = 12 * 60 * 60 * 1000; // 12 hours
 
 const BASE_HEADERS = {
   'accept': '*/*',
@@ -35,6 +38,25 @@ function generateTOTP() {
   return totp.generate();
 }
 
+function saveSession(cookies, sessionid) {
+  fs.writeFileSync(SESSION_FILE, JSON.stringify({ cookies, sessionid, savedAt: Date.now() }));
+  console.log('Session saved to disk.');
+}
+
+function loadSession() {
+  try {
+    const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    if (Date.now() - data.savedAt > SESSION_TTL) {
+      console.log('Cached session expired, will re-login.');
+      return null;
+    }
+    console.log('Loaded session from disk.');
+    return data;
+  } catch (_) {
+    return null; // file doesn't exist yet
+  }
+}
+
 export class TradingView {
   constructor() {
     this.sessionid = null;
@@ -42,11 +64,25 @@ export class TradingView {
   }
 
   async ensureSession() {
+    // Try loading from disk first
+    if (!this.sessionid) {
+      const saved = loadSession();
+      if (saved) {
+        this.cookies = saved.cookies;
+        this.sessionid = saved.sessionid;
+      }
+    }
+
+    // Validate existing session (in-memory or from disk)
     if (this.sessionid) {
       try {
         await axios.get(urls.tvcoins, { headers: { cookie: this.cookies }, timeout: 8000 });
-        return;
-      } catch (_) { /* session expired, re-login below */ }
+        return; // session still valid
+      } catch (_) {
+        console.log('Session invalid, re-logging in...');
+        this.sessionid = null;
+        this.cookies = null;
+      }
     }
 
     // Step 1: username + password
@@ -60,7 +96,7 @@ export class TradingView {
       headers: {
         ...loginPayload.getHeaders(),
         ...BASE_HEADERS,
-        referer: urls.signin,
+        referer: 'https://www.tradingview.com/accounts/signin/',
       },
       maxRedirects: 5,
     });
@@ -95,6 +131,7 @@ export class TradingView {
     if (!sessionMatch) throw new Error('Login failed – no sessionid in cookies');
 
     this.sessionid = sessionMatch[1];
+    saveSession(this.cookies, this.sessionid);
     console.log('Login successful.');
   }
 
