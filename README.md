@@ -6,13 +6,14 @@ This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but n
 
 ## Features
 
-- Automatic login & session management (stores `sessionid` in memory, re-logs in if expired)
+- Automatic login & session management (stores `sessionid` in file with 12hr TTL, auto-renews on expiry)
 - Validate TradingView usernames
 - Check current access status for multiple Pine Scripts at once
 - Grant new access or extend existing access (days, weeks, months, years, or lifetime)
 - Revoke access instantly
 - Exact same API endpoints as the original Python version — drop-in replacement
-- Zero external database needed (session stored in memory; survives restarts via re-login)
+- Zero external database needed (session persisted in JSON; survives restarts)
+- Built-in access logging to `access-logs.json`
 - Ready for deployment on Render, Railway, Fly.io, VPS, etc.
 
 ## API Endpoints
@@ -37,12 +38,20 @@ This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but n
 ```
 tradingview-node/
 ├── src/
-│   ├── config.js          → All TradingView endpoints
-│   ├── helper.js          → Date extension logic
-│   ├── tradingview.js     → Core class with session & API methods
+│   ├── config/
+│   │   ├── constants.js   → API URLs, defaults, Pine names
+│   │   └── config.js      → Centralized config exports
+│   ├── services/
+│   │   ├── tradingview.js → Core TradingView API client
+│   │   ├── session.js     → Session storage & validation
+│   │   └── logger.js      → Access logging
+│   ├── helper/
+│   │   └── helper.js      → Date & duration utilities
 │   ├── routes.js          → All Express routes
 │   └── server.js          → Entry point
 ├── .env                   → Your credentials (never commit!)
+├── access-logs.json       → Access logs (auto-created)
+├── session.json           → Session storage (auto-created)
 ├── package.json
 └── README.md              → This file
 ```
@@ -126,19 +135,22 @@ CMD ["node", "src/server.js"]
 
 ## Security Notes
 
-- Your TradingView password is only used during login — never exposed in responses
-- Session cookie is kept in memory (not written to disk)
+- Session cookie persisted to `session.json` with 12-hour auto-expiry
+- Credentials (`TV_PASSWORD`) only used during initial login — never exposed in responses
+- Session stored in JSON file (not just memory) for durability
 - Always run behind HTTPS in production
 - Rate-limit public endpoints if exposing to users
 - Consider adding API key authentication if this is public-facing
 
 ## Troubleshooting
 
-| Issue                          | Solution |
-|--------------------------------|---------|
-| `Login failed – no sessionid`  | Check username/password, disable 2FA on the account, or solve CAPTCHA manually once in browser |
-| 403 / 401 errors               | Session expired → script will auto re-login on next request |
-| User not found                 | Username is case-sensitive on TradingView — use exact spelling |
+| Issue                               | Solution |
+|------------------                    |---   |
+| `Login failed – no sessionid`       | Check username/password, disable 2FA on the account, or solve CAPTCHA manually once in browser |
+| 403 / 401 errors                    | Session expired → re-login to disk occurs automatically on next request |
+| User not found                      | Username is case-sensitive on TradingView — use exact spelling |
+| `2FA required but TV_TOTP_SECRET`   | Set `TV_TOTP_SECRET` in `.env` with your Time-based One-Time Password secret |
+| `Invalid duration format`           | Use formats: `30D`, `6M`, `1Y`, `1W`, or `L` for lifetime. Example: `{ "duration": "6M" }` |
 
 ## Contributing
 
