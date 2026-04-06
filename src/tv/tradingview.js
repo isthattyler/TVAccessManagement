@@ -2,7 +2,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
 import * as OTPAuth from 'otpauth';
-import { urls } from '../config/config.js';
+import { config } from '../config/config.js';
 import { getAccessExtension } from '../helper/helper.js';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -76,7 +76,7 @@ export class TradingView {
     // Validate existing session (in-memory or from disk)
     if (this.sessionid) {
       try {
-        await axios.get(urls.tvcoins, { headers: { cookie: this.cookies }, timeout: 8000 });
+        await axios.get(config.urls.tvcoins, { headers: { cookie: this.cookies }, timeout: 8000 });
         return; // session still valid
       } catch (_) {
         console.log('Session invalid, re-logging in...');
@@ -92,11 +92,11 @@ export class TradingView {
     loginPayload.append('password', PASSWORD);
     loginPayload.append('remember', 'true');
 
-    const loginResponse = await axios.post(urls.signin, loginPayload, {
+    const loginResponse = await axios.post(config.urls.signin, loginPayload, {
       headers: {
         ...loginPayload.getHeaders(),
         ...BASE_HEADERS,
-        referer: 'https://www.tradingview.com/accounts/signin/',
+        referer: config.urls.signin,
       },
       maxRedirects: 5,
     });
@@ -104,6 +104,10 @@ export class TradingView {
     console.log('Login status:', loginResponse.status);
     console.log('Login data:', JSON.stringify(loginResponse.data));
     console.log('Login cookies:', parseCookies(loginResponse));
+
+    if (loginResponse.data?.error) {
+      throw new Error(`Login failed: ${loginResponse.data.error} (${loginResponse.data.code})`);
+    }
 
     const loginCookies = parseCookies(loginResponse);
     const requires2FA = loginResponse.data?.code === '2FA_required';

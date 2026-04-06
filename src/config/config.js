@@ -1,10 +1,7 @@
-export const urls = {
-  tvcoins: "https://www.tradingview.com/tvcoins/details/",
-  username_hint: "https://www.tradingview.com/username_hint/",
-  list_users: "https://www.tradingview.com/pine_perm/list_users/",
-  modify_access: "https://www.tradingview.com/pine_perm/modify_user_expiration/",
-  add_access: "https://www.tradingview.com/pine_perm/add/",
-  remove_access: "https://www.tradingview.com/pine_perm/remove/",
-  signin: "https://www.tradingview.com/accounts/signin/",
-  signin_totp: "https://www.tradingview.com/accounts/two-factor/signin/totp/"
+import { API_URLS, PINE_NAMES } from './constants.js';
+
+export const config = {
+  urls: API_URLS
 };
+
+export const nameMap = PINE_NAMES;
