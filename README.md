@@ -2,7 +2,7 @@
 
 A clean, fast, and production-ready **Node.js** backend that automates granting, extending, and revoking access to your private TradingView Pine Script indicators/scripts — perfect for paid communities, automated subscription systems, or membership bots.
 
-This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but now using modern JavaScript (ESM), Express, Axios, and proper session handling.
+Built with modern JavaScript (ESM), Express, Axios, and proper session handling.
 
 ## Features
 
@@ -11,7 +11,6 @@ This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but n
 - Check current access status for multiple Pine Scripts at once
 - Grant new access or extend existing access (days, weeks, months, years, or lifetime)
 - Revoke access instantly
-- Exact same API endpoints as the original Python version — drop-in replacement
 - Zero external database needed (session persisted in JSON; survives restarts)
 - Built-in access logging to `access-logs.json`
 - Ready for deployment on Render, Railway, Fly.io, VPS, etc.
@@ -38,17 +37,14 @@ This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but n
 ```
 tradingview-node/
 ├── src/
-│   ├── config/
-│   │   ├── constants.js   → API URLs, defaults, Pine names
-│   │   └── config.js      → Centralized config exports
-│   ├── services/
-│   │   ├── tradingview.js → Core TradingView API client
-│   │   ├── session.js     → Session storage & validation
-│   │   └── logger.js      → Access logging
-│   ├── helper/
-│   │   └── helper.js      → Date & duration utilities
+│   ├── config.js          → API URLs, defaults, Pine name mappings
+│   ├── helper.js          → Date math & duration parsing
+│   ├── logger.js          → Access logging to JSON file
 │   ├── routes.js          → All Express routes
-│   └── server.js          → Entry point
+│   ├── server.js          → Entry point
+│   └── services/
+│       ├── session.js     → Session persistence & validation
+│       └── tradingview.js → TradingView API client
 ├── .env                   → Your credentials (never commit!)
 ├── access-logs.json       → Access logs (auto-created)
 ├── session.json           → Session storage (auto-created)
@@ -165,7 +161,5 @@ Pull requests are welcome! Especially for:
 MIT © 2025 – Feel free to use, modify, and redistribute.
 
 ---
-
-**You now have a faster, cleaner, and more reliable alternative to the old Python Replit bots.**
 
 Enjoy automated Pine Script access management! 🚀
