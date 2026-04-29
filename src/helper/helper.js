@@ -42,7 +42,7 @@ export function parseDuration(duration) {
   if (duration?.toUpperCase() === 'L') return { value: 0, type: 'L' };
   if (/^(\d+)([YMDWL])$/.test(duration)) {
     const match = duration.match(/(\d+)([YMDWL])/);
-    return { value: parseInt(match[1], 10), type: match[1] };
+    return { value: parseInt(match[1], 10), type: match[2] };
   }
   throw new Error('Invalid duration format. Expected format: 30D, 6M, 1Y, 1W, 1L');
 }

@@ -120,7 +120,7 @@ export class TradingView {
       const totpPayload = new FormData();
       totpPayload.append('code', generateTOTP());
 
-      const totpResponse = await axios.post(urls.signin_totp, totpPayload, {
+      const totpResponse = await axios.post(config.urls.signin_totp, totpPayload, {
         headers: {
           ...totpPayload.getHeaders(),
           ...BASE_HEADERS,
@@ -153,7 +153,7 @@ export class TradingView {
 
   async validateUsername(username) {
     await this.ensureSession();
-    const { data } = await axios.get(`${urls.username_hint}?s=${encodeURIComponent(username)}`);
+    const { data } = await axios.get(`${config.urls.username_hint}?s=${encodeURIComponent(username)}`);
     const lower = username.toLowerCase();
     const found = data.find(u => u.username.toLowerCase() === lower);
     return {
@@ -166,7 +166,7 @@ export class TradingView {
     await this.ensureSession();
 
     const { data } = await axios.post(
-      `${urls.list_users}?limit=10&order_by=-created`,
+      `${config.urls.list_users}?limit=10&order_by=-created`,
       new URLSearchParams({ pine_id, username }).toString(),
       {
         headers: {
@@ -193,7 +193,7 @@ export class TradingView {
     payload.append('pine_id', accessDetails.pine_id);
     payload.append('username_recip', accessDetails.username);
 
-    const endpoint = accessDetails.hasAccess ? urls.modify_access : urls.add_access;
+    const endpoint = accessDetails.hasAccess ? config.urls.modify_access : config.urls.add_access;
 
     if (extensionType !== 'L') {
       const newExp = getAccessExtension(accessDetails.currentExpiration, extensionType, extensionLength);
@@ -218,7 +218,7 @@ export class TradingView {
     payload.append('pine_id', accessDetails.pine_id);
     payload.append('username_recip', accessDetails.username);
 
-    const response = await axios.post(urls.remove_access, payload, {
+    const response = await axios.post(config.urls.remove_access, payload, {
       headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
     });
 
