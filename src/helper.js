@@ -1,17 +1,8 @@
 import { parse, format } from 'date-fns';
 import { addDays, addWeeks, addMonths, addYears } from 'date-fns';
-import { DEFAULTS } from '../config/constants.js';
 
 const DATE_FORMAT = 'yyyy-MM-dd HH:mm:ssX';
 const OUTPUT_FORMAT = 'yyyy-MM-dd HH:mm:ss+00';
-
-const VALID_TYPES = [
-  { code: 'D', label: 'Days' },
-  { code: 'W', label: 'Weeks' },
-  { code: 'M', label: 'Months' },
-  { code: 'Y', label: 'Years' },
-  { code: 'L', label: 'Lifetime' }
-];
 
 export function getAccessExtension(currentExpirationDate, extensionType, extensionLength) {
   let expiration = parse(currentExpirationDate, DATE_FORMAT, new Date());
@@ -40,9 +31,9 @@ export function getAccessExtension(currentExpirationDate, extensionType, extensi
 
 export function parseDuration(duration) {
   if (duration?.toUpperCase() === 'L') return { value: 0, type: 'L' };
-  if (/^(\d+)([YMDWL])$/.test(duration)) {
-    const match = duration.match(/(\d+)([YMDWL])/);
+  const match = duration?.match(/^(\d+)([YMDW])$/);
+  if (match) {
     return { value: parseInt(match[1], 10), type: match[2] };
   }
-  throw new Error('Invalid duration format. Expected format: 30D, 6M, 1Y, 1W, 1L');
+  throw new Error('Invalid duration format. Expected format: 30D, 6M, 1Y, 1W, L');
 }

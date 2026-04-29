@@ -1,18 +1,51 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import * as OTPAuth from 'otpauth';
-import { config } from '../config/config.js';
-import { loadSession, saveSession } from './session.js';
-import { getAccessExtension } from '../helper/helper.js';
+import { API_URLS } from '../config.js';
+import { loadSession, saveSession, validateSession } from './session.js';
+import { getAccessExtension } from '../helper.js';
 
 const USERNAME = process.env.TV_USERNAME;
 const PASSWORD = process.env.TV_PASSWORD;
 const TOTP_SECRET = process.env.TV_TOTP_SECRET;
 
+const BASE_HEADERS = {
+  'accept': '*/*',
+  'accept-language': 'en-US,en;q=0.9',
+  'origin': 'https://www.tradingview.com',
+  'x-language': 'en',
+  'x-requested-with': 'XMLHttpRequest',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+};
+
+function generateTOTP() {
+  const totp = new OTPAuth.TOTP({
+    secret: OTPAuth.Secret.fromBase32(TOTP_SECRET),
+    digits: 6,
+    period: 30,
+    algorithm: 'SHA1',
+  });
+  return totp.generate();
+}
+
+function parseCookies(response) {
+  return (response.headers['set-cookie'] || [])
+    .map(c => c.split(';')[0])
+    .join('; ');
+}
+
 export class TradingView {
   constructor() {
     this.sessionid = null;
     this.cookies = null;
+  }
+
+  getAuthHeaders() {
+    return {
+      ...BASE_HEADERS,
+      cookie: this.cookies,
+      referer: 'https://www.tradingview.com/',
+    };
   }
 
   async ensureSession() {
@@ -25,13 +58,10 @@ export class TradingView {
     }
 
     if (this.sessionid) {
-      try {
-        await validateSession(this.cookies);
-        return;
-      } catch {
-        this.sessionid = null;
-        this.cookies = null;
-      }
+      const valid = await validateSession(this.cookies);
+      if (valid) return;
+      this.sessionid = null;
+      this.cookies = null;
     }
 
     const loginPayload = new FormData();
@@ -39,29 +69,41 @@ export class TradingView {
     loginPayload.append('password', PASSWORD);
     loginPayload.append('remember', 'true');
 
-    const loginResponse = await this.login(loginPayload, config.urls.signin, 'signin', this.sessionid);
+    const loginResponse = await axios.post(API_URLS.signin, loginPayload, {
+      headers: {
+        ...loginPayload.getHeaders(),
+        ...BASE_HEADERS,
+        referer: API_URLS.signin,
+      },
+      maxRedirects: 5,
+    });
 
     if (loginResponse.data?.error) {
       throw new Error(`Login failed: ${loginResponse.data.error} (${loginResponse.data.code})`);
     }
 
-    this.cookies = loginResponse.headers['set-cookie']?.join('; ');;
-
-    if (!this.cookies) throw new Error('Login failed – no cookies received');
-
+    const loginCookies = parseCookies(loginResponse);
     const requires2FA = loginResponse.data?.code === '2FA_required';
 
     if (requires2FA) {
       if (!TOTP_SECRET) throw new Error('2FA required but TV_TOTP_SECRET is not set in .env');
 
       const totpPayload = new FormData();
-      totpPayload.append('code', this.generateTOTP());
+      totpPayload.append('code', generateTOTP());
 
-      const totpResponse = await this.login(totpPayload, config.urls.signin_totp, 'signin_totp', this.cookies);
+      const totpResponse = await axios.post(API_URLS.signin_totp, totpPayload, {
+        headers: {
+          ...totpPayload.getHeaders(),
+          ...BASE_HEADERS,
+          referer: 'https://www.tradingview.com/',
+          cookie: loginCookies,
+        },
+        maxRedirects: 5,
+      });
 
-      this.cookies = totpResponse.headers['set-cookie']?.join('; ');;
-
-      if (!this.cookies) throw new Error('2FA failed – no cookies received');
+      this.cookies = parseCookies(totpResponse);
+    } else {
+      this.cookies = loginCookies;
     }
 
     const sessionMatch = this.cookies.match(/sessionid=([^;]+)/);
@@ -71,54 +113,9 @@ export class TradingView {
     saveSession(this.cookies, this.sessionid);
   }
 
-  async login(payload, url, label, currentCookie) {
-    return axios.post(url, payload, {
-      headers: {
-        ...payload.getHeaders(),
-        ...this.getAuthHeaders(currentCookie),
-        referer: this.getReferrerForUrl(url),
-      },
-      maxRedirects: 5,
-    });
-  }
-
-  generateTOTP() {
-    const totp = new OTPAuth.TOTP({
-      secret: OTPAuth.Secret.fromBase32(TOTP_SECRET),
-      digits: 6,
-      period: 30,
-      algorithm: 'SHA1',
-    });
-    return totp.generate();
-  }
-
-  getAuthHeaders(currentCookie = '') {
-    return {
-      ...this.getBaseHeaders(),
-      cookie: currentCookie,
-      referer: 'https://www.tradingview.com/',
-    };
-  }
-
-  getBaseHeaders() {
-    return {
-      'accept': '*/*',
-      'accept-language': 'en-US,en;q=0.9',
-      'origin': 'https://www.tradingview.com',
-      'x-language': 'en',
-      'x-requested-with': 'XMLHttpRequest',
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-    };
-  }
-
-  getReferrerForUrl(url) {
-    if (url.includes('signin')) return 'https://www.tradingview.com/accounts/signin/';
-    if (url.includes('totp')) return 'https://www.tradingview.com/';
-    return 'https://www.tradingview.com/';
-  }
-
   async validateUsername(username) {
-    const { data } = await axios.get(`${config.urls.username_hint}?s=${encodeURIComponent(username)}`);
+    await this.ensureSession();
+    const { data } = await axios.get(`${API_URLS.username_hint}?s=${encodeURIComponent(username)}`);
     const lower = username.toLowerCase();
     const found = data.find(u => u.username.toLowerCase() === lower);
     return {
@@ -128,11 +125,17 @@ export class TradingView {
   }
 
   async getAccessDetails(username, pine_id) {
-    const params = new URLSearchParams().set('limit', '10').set('order_by', '-created');
+    await this.ensureSession();
+
     const { data } = await axios.post(
-      `${config.urls.list_users}?limit=10&order_by=-created`,
+      `${API_URLS.list_users}?limit=10&order_by=-created`,
       new URLSearchParams({ pine_id, username }).toString(),
-      { headers: { ...this.getAuthHeaders(), 'content-type': 'application/x-www-form-urlencoded' } }
+      {
+        headers: {
+          ...this.getAuthHeaders(),
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+      }
     );
 
     const userEntry = data.results?.find(u => u.username.toLowerCase() === username.toLowerCase());
@@ -145,41 +148,43 @@ export class TradingView {
     };
   }
 
-  async addAccess(details, extensionType, extensionLength) {
+  async addAccess(accessDetails, extensionType, extensionLength) {
     await this.ensureSession();
 
     const payload = new FormData();
-    payload.append('pine_id', details.pine_id);
-    payload.append('username_recip', details.username);
+    payload.append('pine_id', accessDetails.pine_id);
+    payload.append('username_recip', accessDetails.username);
+
+    const endpoint = accessDetails.hasAccess ? API_URLS.modify_access : API_URLS.add_access;
 
     if (extensionType !== 'L') {
-      const newExp = getAccessExtension(details.currentExpiration, extensionType, extensionLength);
+      const newExp = getAccessExtension(accessDetails.currentExpiration, extensionType, extensionLength);
       payload.append('expiration', newExp);
-      details.expiration = newExp;
+      accessDetails.expiration = newExp;
     } else {
-      details.noExpiration = true;
+      accessDetails.noExpiration = true;
     }
 
-    const response = await axios.post(config.urls.add_access, payload, {
+    const response = await axios.post(endpoint, payload, {
       headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
     });
 
-    details.status = [200, 201].includes(response.status) ? 'Success' : 'Failure';
-    return details;
+    accessDetails.status = [200, 201].includes(response.status) ? 'Success' : 'Failure';
+    return accessDetails;
   }
 
-  async removeAccess(details) {
+  async removeAccess(accessDetails) {
     await this.ensureSession();
 
     const payload = new FormData();
-    payload.append('pine_id', details.pine_id);
-    payload.append('username_recip', details.username);
+    payload.append('pine_id', accessDetails.pine_id);
+    payload.append('username_recip', accessDetails.username);
 
-    const response = await axios.post(config.urls.remove_access, payload, {
+    const response = await axios.post(API_URLS.remove_access, payload, {
       headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
     });
 
-    details.status = response.status === 200 ? 'Success' : 'Failure';
-    return details;
+    accessDetails.status = response.status === 200 ? 'Success' : 'Failure';
+    return accessDetails;
   }
 }

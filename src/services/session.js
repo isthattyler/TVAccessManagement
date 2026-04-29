@@ -1,18 +1,9 @@
 import axios from 'axios';
 import fs from 'fs';
-import { URLS, DEFAULTS } from '../config/constants.js';
+import { API_URLS, DEFAULTS } from '../config.js';
 
 const SESSION_FILE = DEFAULTS.SESSION_FILE;
 const SESSION_TTL = DEFAULTS.SESSION_TTL;
-
-const BASE_HEADERS = {
-  'accept': '*/*',
-  'accept-language': 'en-US,en;q=0.9',
-  'origin': 'https://www.tradingview.com',
-  'x-language': 'en',
-  'x-requested-with': 'XMLHttpRequest',
-  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-};
 
 export function loadSession() {
   try {
@@ -34,9 +25,11 @@ export function saveSession(cookies, sessionid) {
   console.log('Session saved to disk.');
 }
 
-export function validateSession(cookies) {
-  return axios
-    .get(URLS.tvcoins, { headers: { cookie: cookies }, timeout: DEFAULTS.HEADER_TIMEOUT })
-    .then(() => true)
-    .catch(() => false);
+export async function validateSession(cookies) {
+  try {
+    await axios.get(API_URLS.tvcoins, { headers: { cookie: cookies }, timeout: DEFAULTS.HEADER_TIMEOUT });
+    return true;
+  } catch {
+    return false;
+  }
 }

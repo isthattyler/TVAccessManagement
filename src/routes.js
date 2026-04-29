@@ -1,12 +1,11 @@
 import express from 'express';
-import { TradingView } from './tv/tradingview.js';
-import { logAccess } from './services/logger.js';
-import { parseDuration } from './helper/helper.js';
+import { TradingView } from './services/tradingview.js';
+import { logAccess } from './logger.js';
+import { parseDuration } from './helper.js';
 
 const router = express.Router();
 const tv = new TradingView();
 
-// GET /validate/:username
 router.get('/validate/:username', async (req, res) => {
   const { username } = req.params;
 
@@ -20,7 +19,6 @@ router.get('/validate/:username', async (req, res) => {
   }
 });
 
-// Unified handler for /access/:username (GET, POST, DELETE)
 router.route('/access/:username').all(async (req, res) => {
   const { username } = req.params;
   const { pine_ids, duration } = req.body;
