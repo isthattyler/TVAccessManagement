@@ -2,6 +2,7 @@ import express from 'express';
 import { TradingView } from './tv/tradingview.js';
 import { logAccess } from './services/logger.js';
 import { parseDuration } from './helper/helper.js';
+import { PINE_NAMES } from './config/constants.js';
 
 const router = express.Router();
 const tv = new TradingView();
@@ -79,6 +80,30 @@ router.route('/access/:username').all(async (req, res) => {
     res.json(accessList);
   } catch (err) {
     console.error('Access error:', err.message);
+    res.status(500).json({ errorMessage: 'Service temporarily unavailable' });
+  }
+});
+
+// GET /list-access/:pineId — list all users with access to a script
+router.get('/list-access/:pineId', async (req, res) => {
+  const { pineId } = req.params;
+
+  try {
+    const users = await tv.listAllUsers(pineId);
+    const lifetime = users.filter(u => u.isLifetime);
+    const expiring = users.filter(u => !u.isLifetime);
+
+    res.json({
+      pine_id: pineId,
+      name: PINE_NAMES[pineId] || null,
+      total: users.length,
+      lifetime_count: lifetime.length,
+      expiring_count: expiring.length,
+      lifetime_users: lifetime.map(u => u.username),
+      expiring_users: expiring.map(u => ({ username: u.username, expiration: u.expiration })),
+    });
+  } catch (err) {
+    console.error('List access error:', err.message);
     res.status(500).json({ errorMessage: 'Service temporarily unavailable' });
   }
 });

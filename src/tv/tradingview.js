@@ -341,4 +341,48 @@ export class TradingView {
     accessDetails.status = response.status === 200 ? 'Success' : 'Failure';
     return accessDetails;
   }
+
+  /**
+   * List all users with access to a script (handles cursor-based pagination)
+   */
+  async listAllUsers(pine_id) {
+    await this.ensureSession();
+
+    const headers = { ...this.getAuthHeaders(), 'content-type': 'application/x-www-form-urlencoded' };
+    const allUsers = [];
+    let cursor = null;
+
+    while (true) {
+      const params = new URLSearchParams({ pine_id, limit: '100' }).toString();
+      const url = cursor
+        ? `${config.urls.list_users}?c=${encodeURIComponent(cursor)}`
+        : config.urls.list_users;
+
+      const { data } = await withRetry(() =>
+        axios.post(url, params, { headers, timeout: REQUEST_TIMEOUT })
+      );
+
+      allUsers.push(...(data.results || []));
+
+      if (data.next) {
+        cursor = data.next.split('?c=')[1];
+      } else {
+        break;
+      }
+
+      if (allUsers.length > 5000) break;
+    }
+
+    const seen = new Set();
+    return allUsers.filter(u => {
+      const key = u.username.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(u => ({
+      username: u.username,
+      expiration: u.expiration || null,
+      isLifetime: !u.expiration,
+    }));
+  }
 }
