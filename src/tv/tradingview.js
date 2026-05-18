@@ -56,7 +56,7 @@ async function withRetry(fn, retries = MAX_RETRIES) {
     } catch (err) {
       if (i === retries - 1) throw err;
       const delay = Math.pow(2, i) * 1000;
-      console.log(`Request failed, retrying in ${delay}ms... (${i + 1}/${retries})`);
+      console.log(`Request failed (${err.code || err.message}), retrying in ${delay}ms... (${i + 1}/${retries})`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -249,6 +249,37 @@ export class TradingView {
 
     accessDetails.status = [200, 201].includes(response.status) ? 'Success' : 'Failure';
     return accessDetails;
+  }
+
+  /**
+   * Direct grant access without fetching existing details
+   * (bypasses the list_users endpoint which can be unreliable)
+   */
+  async directGrant(username, pine_id, extensionType, extensionLength) {
+    await this.ensureSession();
+
+    const payload = new FormData();
+    payload.append('pine_id', pine_id);
+    payload.append('username_recip', username);
+
+    if (extensionType !== 'L') {
+      const newExp = getAccessExtension(new Date().toISOString(), extensionType, extensionLength);
+      payload.append('expiration', newExp);
+    }
+
+    const response = await withRetry(() =>
+      axios.post(config.urls.add_access, payload, {
+        headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
+        timeout: REQUEST_TIMEOUT,
+      })
+    );
+
+    return {
+      pine_id,
+      username,
+      hasAccess: true,
+      status: [200, 201].includes(response.status) ? 'Success' : 'Failure',
+    };
   }
 
   /**

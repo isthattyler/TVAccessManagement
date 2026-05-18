@@ -8,7 +8,7 @@ const tv = new TradingView();
 
 // Validate username format (alphanumeric + underscore only)
 function isValidUsername(username) {
-  return /^[a-zA-Z0-9_]+$/.test(username);
+  return /^[a-zA-Z0-9_-]+$/.test(username);
 }
 
 // GET /validate/:username
@@ -47,11 +47,7 @@ router.route('/access/:username').all(async (req, res) => {
 
     const pineIds = pine_ids || [];
 
-    // Fetch access details in parallel for better performance
-    const accessList = await Promise.all(
-      pineIds.map(pine_id => tv.getAccessDetails(username, pine_id))
-    );
-
+    let accessList;
     let action = 'check';
 
     if (req.method === 'POST') {
@@ -62,16 +58,21 @@ router.route('/access/:username').all(async (req, res) => {
         return res.status(400).json({ error: 'Invalid duration format' });
       }
 
-      await Promise.all(
-        accessList.map(access => tv.addAccess(access, durationValue.type, durationValue.value))
+      accessList = await Promise.all(
+        pineIds.map(pine_id => tv.directGrant(username, pine_id, durationValue.type, durationValue.value))
       );
-    }
+    } else {
+      // Fetch access details in parallel for better performance
+      accessList = await Promise.all(
+        pineIds.map(pine_id => tv.getAccessDetails(username, pine_id))
+      );
 
-    if (req.method === 'DELETE') {
-      action = 'revoke';
-      await Promise.all(
-        accessList.map(access => tv.removeAccess(access))
-      );
+      if (req.method === 'DELETE') {
+        action = 'revoke';
+        await Promise.all(
+          accessList.map(access => tv.removeAccess(access))
+        );
+      }
     }
 
     logAccess(lowerUser, pineIds, action);

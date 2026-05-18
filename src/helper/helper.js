@@ -1,20 +1,14 @@
 import { parse, format } from 'date-fns';
 import { addDays, addWeeks, addMonths, addYears } from 'date-fns';
-import { DEFAULTS } from '../config/constants.js';
 
-const DATE_FORMAT = 'yyyy-MM-dd HH:mm:ssX';
-const OUTPUT_FORMAT = 'yyyy-MM-dd HH:mm:ss+00';
-
-const VALID_TYPES = [
-  { code: 'D', label: 'Days' },
-  { code: 'W', label: 'Weeks' },
-  { code: 'M', label: 'Months' },
-  { code: 'Y', label: 'Years' },
-  { code: 'L', label: 'Lifetime' }
-];
+const TV_FORMAT = 'yyyy-MM-dd HH:mm:ssX';
+const OUTPUT_FORMAT = "yyyy-MM-dd HH:mm:ss";
 
 export function getAccessExtension(currentExpirationDate, extensionType, extensionLength) {
-  let expiration = parse(currentExpirationDate, DATE_FORMAT, new Date());
+  let expiration = parse(currentExpirationDate, TV_FORMAT, new Date());
+  if (isNaN(expiration.getTime())) {
+    expiration = new Date(currentExpirationDate);
+  }
   const type = extensionType.toUpperCase();
 
   switch (type) {
