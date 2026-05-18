@@ -3,7 +3,7 @@ import FormData from 'form-data';
 import * as OTPAuth from 'otpauth';
 import { config } from '../config/config.js';
 import { getAccessExtension } from '../helper/helper.js';
-import { loadSession, saveSession, validateSession } from '../services/session.js';
+import { loadSession, saveSession, validateSession, getSessionRemaining } from '../services/session.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -62,16 +62,46 @@ async function withRetry(fn, retries = MAX_RETRIES) {
   }
 }
 
+const REFRESH_BUFFER = 30 * 60 * 1000;
+
 export class TradingView {
   constructor() {
     this.sessionid = null;
     this.cookies = null;
+    this._refreshTimer = null;
+    this._refreshing = false;
+    this._scheduleRefresh();
+  }
+
+  _scheduleRefresh() {
+    if (this._refreshTimer) clearTimeout(this._refreshTimer);
+    const remaining = getSessionRemaining();
+    if (remaining <= 0) return;
+    const delay = remaining - REFRESH_BUFFER;
+    if (delay <= 0) return;
+    this._refreshTimer = setTimeout(() => {
+      console.log('Proactive session refresh triggered...');
+      this._refreshing = true;
+      this.sessionid = null;
+      this.cookies = null;
+      this.login().then(() => {
+        this._refreshing = false;
+        this._scheduleRefresh();
+      }).catch(e => {
+        console.error('Proactive refresh failed:', e.message);
+        this._refreshing = false;
+      });
+    }, delay);
   }
 
   /**
    * Ensure valid session exists, login if needed
    */
   async ensureSession() {
+    if (this._refreshing) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+
     if (!this.sessionid) {
       const saved = loadSession();
       if (saved) {
@@ -81,6 +111,14 @@ export class TradingView {
     }
 
     if (this.sessionid) {
+      const remaining = getSessionRemaining();
+      if (remaining <= REFRESH_BUFFER) {
+        console.log('Session near expiry, refreshing proactively...');
+        this.sessionid = null;
+        this.cookies = null;
+        await this.login();
+        return;
+      }
       const valid = await validateSession(this.cookies);
       if (valid) return;
       console.log('Session invalid, re-logging in...');
@@ -155,6 +193,7 @@ export class TradingView {
 
     this.sessionid = sessionMatch[1];
     saveSession(this.cookies, this.sessionid);
+    this._scheduleRefresh();
     console.log('Login successful.');
   }
 

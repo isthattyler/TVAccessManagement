@@ -10,7 +10,7 @@ export const API_URLS = {
 };
 
 export const DEFAULTS = {
-  SESSION_TTL: 12 * 60 * 60 * 1000,
+  SESSION_TTL: 23 * 60 * 60 * 1000,
   LOG_FILE: './access-logs.json',
   SESSION_FILE: './session.json',
   HEADER_TIMEOUT: 30000

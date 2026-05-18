@@ -50,3 +50,19 @@ export function validateSession(cookies) {
     .then(() => true)
     .catch(() => false);
 }
+
+/**
+ * Get remaining time until session expiry (ms).
+ * Returns 0 if no valid session exists.
+ */
+export function getSessionRemaining() {
+  try {
+    if (!fs.existsSync(SESSION_FILE)) return 0;
+    const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    const elapsed = Date.now() - data.savedAt;
+    const remaining = SESSION_TTL - elapsed;
+    return remaining > 0 ? remaining : 0;
+  } catch {
+    return 0;
+  }
+}
