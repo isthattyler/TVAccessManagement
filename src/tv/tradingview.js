@@ -4,14 +4,15 @@ import fs from 'fs';
 import * as OTPAuth from 'otpauth';
 import { config } from '../config/config.js';
 import { getAccessExtension } from '../helper/helper.js';
+import { loadSession, saveSession, validateSession } from '../services/session.js';
 import dotenv from 'dotenv';
+
 dotenv.config();
 
 const USERNAME = process.env.TV_USERNAME;
 const PASSWORD = process.env.TV_PASSWORD;
 const TOTP_SECRET = process.env.TV_TOTP_SECRET;
 const SESSION_FILE = './session.json';
-const SESSION_TTL = 12 * 60 * 60 * 1000; // 12 hours
 
 const BASE_HEADERS = {
   'accept': '*/*',
@@ -22,12 +23,21 @@ const BASE_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
 };
 
+const MAX_RETRIES = 3;
+const REQUEST_TIMEOUT = 8000;
+
+/**
+ * Parse cookies from response headers
+ */
 function parseCookies(response) {
   return (response.headers['set-cookie'] || [])
     .map(c => c.split(';')[0])
     .join('; ');
 }
 
+/**
+ * Generate TOTP code for 2FA
+ */
 function generateTOTP() {
   const totp = new OTPAuth.TOTP({
     secret: OTPAuth.Secret.fromBase32(TOTP_SECRET),
@@ -38,22 +48,19 @@ function generateTOTP() {
   return totp.generate();
 }
 
-function saveSession(cookies, sessionid) {
-  fs.writeFileSync(SESSION_FILE, JSON.stringify({ cookies, sessionid, savedAt: Date.now() }));
-  console.log('Session saved to disk.');
-}
-
-function loadSession() {
-  try {
-    const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
-    if (Date.now() - data.savedAt > SESSION_TTL) {
-      console.log('Cached session expired, will re-login.');
-      return null;
+/**
+ * Retry wrapper with exponential backoff
+ */
+async function withRetry(fn, retries = MAX_RETRIES) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      const delay = Math.pow(2, i) * 1000;
+      console.log(`Request failed, retrying in ${delay}ms... (${i + 1}/${retries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-    console.log('Loaded session from disk.');
-    return data;
-  } catch (_) {
-    return null; // file doesn't exist yet
   }
 }
 
@@ -63,8 +70,10 @@ export class TradingView {
     this.cookies = null;
   }
 
+  /**
+   * Ensure valid session exists, login if needed
+   */
   async ensureSession() {
-    // Try loading from disk first
     if (!this.sessionid) {
       const saved = loadSession();
       if (saved) {
@@ -73,37 +82,39 @@ export class TradingView {
       }
     }
 
-    // Validate existing session (in-memory or from disk)
     if (this.sessionid) {
-      try {
-        await axios.get(config.urls.tvcoins, { headers: { cookie: this.cookies }, timeout: 8000 });
-        return; // session still valid
-      } catch (_) {
-        console.log('Session invalid, re-logging in...');
-        this.sessionid = null;
-        this.cookies = null;
-      }
+      const valid = await validateSession(this.cookies);
+      if (valid) return;
+      console.log('Session invalid, re-logging in...');
+      this.sessionid = null;
+      this.cookies = null;
     }
 
-    // Step 1: username + password
+    await this.login();
+  }
+
+  /**
+   * Perform login to TradingView
+   */
+  async login() {
     console.log('Logging in to TradingView...');
+
     const loginPayload = new FormData();
     loginPayload.append('username', USERNAME);
     loginPayload.append('password', PASSWORD);
     loginPayload.append('remember', 'true');
 
-    const loginResponse = await axios.post(config.urls.signin, loginPayload, {
-      headers: {
-        ...loginPayload.getHeaders(),
-        ...BASE_HEADERS,
-        referer: config.urls.signin,
-      },
-      maxRedirects: 5,
-    });
-
-    console.log('Login status:', loginResponse.status);
-    console.log('Login data:', JSON.stringify(loginResponse.data));
-    console.log('Login cookies:', parseCookies(loginResponse));
+    const loginResponse = await withRetry(() =>
+      axios.post(config.urls.signin, loginPayload, {
+        headers: {
+          ...loginPayload.getHeaders(),
+          ...BASE_HEADERS,
+          referer: config.urls.signin,
+        },
+        maxRedirects: 5,
+        timeout: REQUEST_TIMEOUT,
+      })
+    );
 
     if (loginResponse.data?.error) {
       throw new Error(`Login failed: ${loginResponse.data.error} (${loginResponse.data.code})`);
@@ -112,23 +123,27 @@ export class TradingView {
     const loginCookies = parseCookies(loginResponse);
     const requires2FA = loginResponse.data?.code === '2FA_required';
 
-    // Step 2: TOTP (if 2FA enabled)
     if (requires2FA) {
-      if (!TOTP_SECRET) throw new Error('2FA required but TV_TOTP_SECRET is not set in .env');
+      if (!TOTP_SECRET) {
+        throw new Error('2FA required but TV_TOTP_SECRET is not set in .env');
+      }
 
       console.log('2FA required, submitting TOTP...');
       const totpPayload = new FormData();
       totpPayload.append('code', generateTOTP());
 
-      const totpResponse = await axios.post(urls.signin_totp, totpPayload, {
-        headers: {
-          ...totpPayload.getHeaders(),
-          ...BASE_HEADERS,
-          referer: 'https://www.tradingview.com/',
-          cookie: loginCookies,
-        },
-        maxRedirects: 5,
-      });
+      const totpResponse = await withRetry(() =>
+        axios.post(config.urls.signin_totp, totpPayload, {
+          headers: {
+            ...totpPayload.getHeaders(),
+            ...BASE_HEADERS,
+            referer: 'https://www.tradingview.com/',
+            cookie: loginCookies,
+          },
+          maxRedirects: 5,
+          timeout: REQUEST_TIMEOUT,
+        })
+      );
 
       this.cookies = parseCookies(totpResponse);
     } else {
@@ -136,13 +151,18 @@ export class TradingView {
     }
 
     const sessionMatch = this.cookies.match(/sessionid=([^;]+)/);
-    if (!sessionMatch) throw new Error('Login failed – no sessionid in cookies');
+    if (!sessionMatch) {
+      throw new Error('Login failed – no sessionid in cookies');
+    }
 
     this.sessionid = sessionMatch[1];
     saveSession(this.cookies, this.sessionid);
     console.log('Login successful.');
   }
 
+  /**
+   * Get authenticated headers with session cookies
+   */
   getAuthHeaders() {
     return {
       ...BASE_HEADERS,
@@ -151,9 +171,19 @@ export class TradingView {
     };
   }
 
+  /**
+   * Validate if a username exists on TradingView
+   */
   async validateUsername(username) {
     await this.ensureSession();
-    const { data } = await axios.get(`${urls.username_hint}?s=${encodeURIComponent(username)}`);
+
+    const { data } = await withRetry(() =>
+      axios.get(`${config.urls.username_hint}?s=${encodeURIComponent(username)}`, {
+        headers: this.getAuthHeaders(),
+        timeout: REQUEST_TIMEOUT,
+      })
+    );
+
     const lower = username.toLowerCase();
     const found = data.find(u => u.username.toLowerCase() === lower);
     return {
@@ -162,18 +192,24 @@ export class TradingView {
     };
   }
 
+  /**
+   * Get access details for a user and pine script
+   */
   async getAccessDetails(username, pine_id) {
     await this.ensureSession();
 
-    const { data } = await axios.post(
-      `${urls.list_users}?limit=10&order_by=-created`,
-      new URLSearchParams({ pine_id, username }).toString(),
-      {
-        headers: {
-          ...this.getAuthHeaders(),
-          'content-type': 'application/x-www-form-urlencoded',
-        },
-      }
+    const { data } = await withRetry(() =>
+      axios.post(
+        `${config.urls.list_users}?limit=10&order_by=-created`,
+        new URLSearchParams({ pine_id, username }).toString(),
+        {
+          headers: {
+            ...this.getAuthHeaders(),
+            'content-type': 'application/x-www-form-urlencoded',
+          },
+          timeout: REQUEST_TIMEOUT,
+        }
+      )
     );
 
     const userEntry = data.results?.find(u => u.username.toLowerCase() === username.toLowerCase());
@@ -186,6 +222,9 @@ export class TradingView {
     };
   }
 
+  /**
+   * Grant or extend access for a user
+   */
   async addAccess(accessDetails, extensionType, extensionLength) {
     await this.ensureSession();
 
@@ -193,7 +232,7 @@ export class TradingView {
     payload.append('pine_id', accessDetails.pine_id);
     payload.append('username_recip', accessDetails.username);
 
-    const endpoint = accessDetails.hasAccess ? urls.modify_access : urls.add_access;
+    const endpoint = accessDetails.hasAccess ? config.urls.modify_access : config.urls.add_access;
 
     if (extensionType !== 'L') {
       const newExp = getAccessExtension(accessDetails.currentExpiration, extensionType, extensionLength);
@@ -203,14 +242,20 @@ export class TradingView {
       accessDetails.noExpiration = true;
     }
 
-    const response = await axios.post(endpoint, payload, {
-      headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
-    });
+    const response = await withRetry(() =>
+      axios.post(endpoint, payload, {
+        headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
+        timeout: REQUEST_TIMEOUT,
+      })
+    );
 
     accessDetails.status = [200, 201].includes(response.status) ? 'Success' : 'Failure';
     return accessDetails;
   }
 
+  /**
+   * Revoke access for a user
+   */
   async removeAccess(accessDetails) {
     await this.ensureSession();
 
@@ -218,9 +263,12 @@ export class TradingView {
     payload.append('pine_id', accessDetails.pine_id);
     payload.append('username_recip', accessDetails.username);
 
-    const response = await axios.post(urls.remove_access, payload, {
-      headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
-    });
+    const response = await withRetry(() =>
+      axios.post(config.urls.remove_access, payload, {
+        headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
+        timeout: REQUEST_TIMEOUT,
+      })
+    );
 
     accessDetails.status = response.status === 200 ? 'Success' : 'Failure';
     return accessDetails;
