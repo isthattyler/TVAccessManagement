@@ -25,6 +25,7 @@ This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but n
 | GET    | `/access/:username`       | Get current access details for one or more Pine Scripts                     | `{ "pine_ids": ["PH123456", "PH789012"] }` |
 | POST   | `/access/:username`       | Grant or extend access                                                      | `{ "pine_ids": [...], "duration": "6M" }` or `"L"` for lifetime |
 | DELETE | `/access/:username`       | Revoke access completely                                                   | `{ "pine_ids": [...] }` |
+| GET    | `/list-access/:pineId`    | List ALL users with access to a script (paginated, deduplicated)            | `/list-access/PH123456` |
 
 ### Duration Format (POST)
 - `30D` → 30 days  
@@ -32,6 +33,23 @@ This is a full 1-to-1 rewrite of the popular Replit/Flask Python versions, but n
 - `6M` → 6 months  
 - `1Y` → 1 year  
 - `L`  → Lifetime (no expiration)
+
+### List-Access Response Format
+
+```json
+{
+  "pine_id": "PUB;fad4694201c0492caa1ea2815c92fa40",
+  "name": "Fractal Model Lite",
+  "total": 1912,
+  "lifetime_count": 1880,
+  "expiring_count": 32,
+  "lifetime_users": ["user1", "user2", ...],
+  "expiring_users": [
+    { "username": "user3", "expiration": "2027-05-18T22:20:23+00:00" },
+    ...
+  ]
+}
+```
 
 ## Project Structure
 
@@ -112,6 +130,9 @@ curl -X POST http://localhost:5000/access/someuser123 \
 curl -X DELETE http://localhost:5000/access/someuser123 \
   -H "Content-Type: application/json" \
   -d '{"pine_ids": ["PH123456789"]}'
+
+# List all users with access to a script
+curl http://localhost:5000/list-access/PH123456789
 ```
 
 ## Deployment Options
