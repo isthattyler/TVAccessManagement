@@ -9,7 +9,7 @@ const tv = new TradingView();
 
 // Validate username format (alphanumeric + underscore only)
 function isValidUsername(username) {
-  return /^[a-zA-Z0-9_-]+$/.test(username);
+  return /^[a-zA-Z0-9_.-]+$/.test(username);
 }
 
 // GET /validate/:username
