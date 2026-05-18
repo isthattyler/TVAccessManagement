@@ -38,5 +38,5 @@ export function parseDuration(duration) {
     const match = duration.match(/(\d+)([YMDWL])/);
     return { value: parseInt(match[1], 10), type: match[2] };
   }
-  throw new Error('Invalid duration format. Expected format: 30D, 6M, 1Y, 1W, 1L');
+  throw new Error('Invalid duration format. Expected format: 30D, 6M, 1Y, 1W, L');
 }

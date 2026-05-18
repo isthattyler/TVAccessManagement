@@ -1,18 +1,16 @@
 import express from 'express';
-import { TradingView } from './tv/tradingview.js';
-import { logAccess } from './services/logger.js';
-import { parseDuration } from './helper/helper.js';
-import { PINE_NAMES } from './config/constants.js';
+import { TradingView } from './services/tradingview.js';
+import { logAccess } from './logger.js';
+import { parseDuration } from './helper.js';
+import { PINE_NAMES } from './config.js';
 
 const router = express.Router();
 const tv = new TradingView();
 
-// Validate username format (alphanumeric + underscore only)
 function isValidUsername(username) {
   return /^[a-zA-Z0-9_.-]+$/.test(username);
 }
 
-// GET /validate/:username
 router.get('/validate/:username', async (req, res) => {
   const { username } = req.params;
 
@@ -30,7 +28,6 @@ router.get('/validate/:username', async (req, res) => {
   }
 });
 
-// Unified handler for /access/:username (GET, POST, DELETE)
 router.route('/access/:username').all(async (req, res) => {
   const { username } = req.params;
   const { pine_ids, duration } = req.body;
@@ -63,7 +60,6 @@ router.route('/access/:username').all(async (req, res) => {
         pineIds.map(pine_id => tv.directGrant(username, pine_id, durationValue.type, durationValue.value))
       );
     } else {
-      // Fetch access details in parallel for better performance
       accessList = await Promise.all(
         pineIds.map(pine_id => tv.getAccessDetails(username, pine_id))
       );
@@ -84,7 +80,6 @@ router.route('/access/:username').all(async (req, res) => {
   }
 });
 
-// GET /list-access/:pineId — list all users with access to a script
 router.get('/list-access/:pineId', async (req, res) => {
   const { pineId } = req.params;
 
