@@ -1,6 +1,5 @@
 import axios from 'axios';
 import FormData from 'form-data';
-import fs from 'fs';
 import * as OTPAuth from 'otpauth';
 import { config } from '../config/config.js';
 import { getAccessExtension } from '../helper/helper.js';
@@ -12,7 +11,6 @@ dotenv.config();
 const USERNAME = process.env.TV_USERNAME;
 const PASSWORD = process.env.TV_PASSWORD;
 const TOTP_SECRET = process.env.TV_TOTP_SECRET;
-const SESSION_FILE = './session.json';
 
 const BASE_HEADERS = {
   'accept': '*/*',
@@ -24,7 +22,7 @@ const BASE_HEADERS = {
 };
 
 const MAX_RETRIES = 3;
-const REQUEST_TIMEOUT = 8000;
+const REQUEST_TIMEOUT = 30000;
 
 /**
  * Parse cookies from response headers
@@ -116,7 +114,7 @@ export class TradingView {
       })
     );
 
-    if (loginResponse.data?.error) {
+    if (loginResponse.data?.error && loginResponse.data?.code !== '2FA_required') {
       throw new Error(`Login failed: ${loginResponse.data.error} (${loginResponse.data.code})`);
     }
 
