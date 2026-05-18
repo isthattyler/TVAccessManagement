@@ -291,27 +291,35 @@ export class TradingView {
   }
 
   /**
-   * Direct grant access without fetching existing details
-   * (bypasses the list_users endpoint which can be unreliable)
+   * Grant or modify expiration for a user. Falls back to modify_user_expiration
+   * if the user already has access (add_access returns "exists").
    */
   async directGrant(username, pine_id, extensionType, extensionLength) {
     await this.ensureSession();
 
-    const payload = new FormData();
-    payload.append('pine_id', pine_id);
-    payload.append('username_recip', username);
+    const buildPayload = () => {
+      const p = new FormData();
+      p.append('pine_id', pine_id);
+      p.append('username_recip', username);
+      if (extensionType !== 'L') {
+        p.append('expiration', getAccessExtension(new Date().toISOString(), extensionType, extensionLength));
+      }
+      return p;
+    };
 
-    if (extensionType !== 'L') {
-      const newExp = getAccessExtension(new Date().toISOString(), extensionType, extensionLength);
-      payload.append('expiration', newExp);
+    const post = (endpoint, payload) =>
+      withRetry(() =>
+        axios.post(endpoint, payload, {
+          headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
+          timeout: REQUEST_TIMEOUT,
+        })
+      );
+
+    let response = await post(config.urls.add_access, buildPayload());
+
+    if (response.data?.status === 'exists') {
+      response = await post(config.urls.modify_access, buildPayload());
     }
-
-    const response = await withRetry(() =>
-      axios.post(config.urls.add_access, payload, {
-        headers: { ...payload.getHeaders(), ...this.getAuthHeaders() },
-        timeout: REQUEST_TIMEOUT,
-      })
-    );
 
     return {
       pine_id,
